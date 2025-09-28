@@ -1,5 +1,3 @@
-# trabalho-redes-tcp/server/client_handler.py
-
 import logging
 import os
 import threading
@@ -10,10 +8,12 @@ from common.protocol import Protocol
 
 logger = logging.getLogger(__name__)
 
+
 class ClientHandler(threading.Thread):
     """
     Gerencia a comunicação com um cliente conectado em uma thread separada.
     """
+
     def __init__(self, conn: socket, addr: tuple, uploads_dir: str):
         super().__init__(daemon=True)
         self.conn = conn
@@ -30,12 +30,16 @@ class ClientHandler(threading.Thread):
             file_list_str = "\n".join(files)
             if not file_list_str:
                 file_list_str = "Nenhum arquivo no servidor."
-            response_payload = file_list_str.encode('utf-8')
+            response_payload = file_list_str.encode("utf-8")
             self.conn.sendall(Protocol.pack_message(Opcode.SUCCESS, response_payload))
         except FileNotFoundError:
-            logger.error(f"O diretório de uploads '{self.uploads_dir}' não foi encontrado.")
+            logger.error(
+                f"O diretório de uploads '{self.uploads_dir}' não foi encontrado."
+            )
             error_msg = "Erro interno no servidor: diretório de uploads não encontrado."
-            self.conn.sendall(Protocol.pack_message(Opcode.ERROR, error_msg.encode('utf-8')))
+            self.conn.sendall(
+                Protocol.pack_message(Opcode.ERROR, error_msg.encode("utf-8"))
+            )
 
     def _handle_quit(self):
         """Lida com a requisição QUIT."""
@@ -43,27 +47,33 @@ class ClientHandler(threading.Thread):
         try:
             self.conn.sendall(Protocol.pack_message(Opcode.SUCCESS, b"Adeus!"))
         except OSError:
-            pass # A conexão já pode ter sido fechada pelo cliente
+            pass
         finally:
             self.is_running = False
 
     def _handle_put(self, initial_payload: bytes):
         """Lida com a requisição PUT para fazer upload de um arquivo."""
-        # (Este método _handle_put permanece exatamente o mesmo da Fase 4)
+
         try:
-            filename = initial_payload.decode('utf-8')
+            filename = initial_payload.decode("utf-8")
             safe_filename = os.path.basename(filename)
             filepath = os.path.join(self.uploads_dir, safe_filename)
-            
-            logger.info(f"Cliente {self.addr} solicitou o upload do arquivo: {safe_filename}")
+
+            logger.info(
+                f"Cliente {self.addr} solicitou o upload do arquivo: {safe_filename}"
+            )
 
             if os.path.exists(filepath):
-                logger.warning(f"Upload negado: arquivo '{safe_filename}' já existe no servidor.")
-                error_msg = f"Arquivo '{safe_filename}' já existe.".encode('utf-8')
+                logger.warning(
+                    f"Upload negado: arquivo '{safe_filename}' já existe no servidor."
+                )
+                error_msg = f"Arquivo '{safe_filename}' já existe.".encode("utf-8")
                 self.conn.sendall(Protocol.pack_message(Opcode.ERROR, error_msg))
                 return
-            
-            logger.debug(f"Sinalizando para o cliente {self.addr} que pode enviar o arquivo.")
+
+            logger.debug(
+                f"Sinalizando para o cliente {self.addr} que pode enviar o arquivo."
+            )
             self.conn.sendall(Protocol.pack_message(Opcode.SUCCESS, b"OK_TO_SEND"))
 
             with open(filepath, "wb") as f:
@@ -71,34 +81,44 @@ class ClientHandler(threading.Thread):
                     if opcode == Opcode.DATA_CHUNK:
                         f.write(payload)
                     elif opcode == Opcode.END_OF_FILE:
-                        logger.info(f"Transferência do arquivo '{safe_filename}' de {self.addr} concluída.")
-                        self.conn.sendall(Protocol.pack_message(Opcode.SUCCESS, b"UPLOAD_COMPLETE"))
-                        return # <<< MODIFICADO: Retorna para o laço principal para esperar o próximo comando
+                        logger.info(
+                            f"Transferência do arquivo '{safe_filename}' de {self.addr} concluída."
+                        )
+                        self.conn.sendall(
+                            Protocol.pack_message(Opcode.SUCCESS, b"UPLOAD_COMPLETE")
+                        )
+                        return
                     else:
-                        logger.error(f"Protocolo inesperado durante o upload de {self.addr}: {opcode}")
-                        raise ConnectionResetError("Erro de protocolo durante o upload.")
+                        logger.error(
+                            f"Protocolo inesperado durante o upload de {self.addr}: {opcode}"
+                        )
+                        raise ConnectionResetError(
+                            "Erro de protocolo durante o upload."
+                        )
         except Exception as e:
-            logger.error(f"Erro durante o upload do arquivo de {self.addr}: {e}", exc_info=True)
-            if 'filepath' in locals() and os.path.exists(filepath):
+            logger.error(
+                f"Erro durante o upload do arquivo de {self.addr}: {e}", exc_info=True
+            )
+            if "filepath" in locals() and os.path.exists(filepath):
                 os.remove(filepath)
                 logger.info(f"Arquivo parcial '{safe_filename}' removido.")
             try:
-                self.conn.sendall(Protocol.pack_message(Opcode.ERROR, str(e).encode('utf-8')))
+                self.conn.sendall(
+                    Protocol.pack_message(Opcode.ERROR, str(e).encode("utf-8"))
+                )
             except OSError:
                 pass
             self.is_running = False
 
-    # <<< MODIFICADO: O método run agora fica em um laço contínuo >>>
     def run(self):
         """
         Método principal da thread. Escuta por múltiplos comandos até que QUIT seja recebido.
         """
         logger.info(f"Conexão de {self.addr} estabelecida. Aguardando comandos.")
         try:
-            # O laço 'for' do gerador já serve como nosso laço principal de escuta.
-            # Ele continuará escutando por mensagens enquanto a conexão estiver ativa.
+
             for opcode, payload in Protocol.unpack_stream(self.conn):
-                
+
                 match opcode:
                     case Opcode.LIST:
                         self._handle_list()
@@ -106,15 +126,18 @@ class ClientHandler(threading.Thread):
                         self._handle_put(payload)
                     case Opcode.QUIT:
                         self._handle_quit()
-                
-                # Se o cliente enviou QUIT, self.is_running será False e quebramos o laço.
+
                 if not self.is_running:
                     break
 
         except (ConnectionResetError, StopIteration):
-             logger.warning(f"Conexão com {self.addr} foi fechada abruptamente pelo cliente.")
+            logger.warning(
+                f"Conexão com {self.addr} foi fechada abruptamente pelo cliente."
+            )
         except Exception as e:
-            logger.error(f"Erro crítico na comunicação com {self.addr}: {e}", exc_info=True)
+            logger.error(
+                f"Erro crítico na comunicação com {self.addr}: {e}", exc_info=True
+            )
         finally:
             logger.info(f"Encerrando sessão e conexão com {self.addr}.")
             self.conn.close()

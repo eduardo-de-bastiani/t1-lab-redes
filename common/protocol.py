@@ -6,6 +6,7 @@ from common.opcode import Opcode
 
 logger = logging.getLogger(__name__)
 
+
 def _recv_all(sock: socket, n_bytes: int) -> bytes | None:
     """
     Recebe exatamente n_bytes de um socket.
@@ -17,7 +18,7 @@ def _recv_all(sock: socket, n_bytes: int) -> bytes | None:
         try:
             chunk = sock.recv(n_bytes - bytes_received)
             if not chunk:
-                # Conexão fechada pelo peer
+
                 return None
             chunks.append(chunk)
             bytes_received += len(chunk)
@@ -44,28 +45,36 @@ class Protocol:
         """
         while True:
             try:
-                # <<< MODIFICADO: Usa a função _recv_all para garantir o cabeçalho completo >>>
+
                 header_data = _recv_all(sock, Protocol.HEADER_SIZE)
                 if header_data is None:
-                    # Conexão foi fechada
-                    logger.warning("Conexão fechada ao tentar ler o cabeçalho da mensagem.")
+
+                    logger.warning(
+                        "Conexão fechada ao tentar ler o cabeçalho da mensagem."
+                    )
                     break
 
-                opcode_val, payload_size = struct.unpack(Protocol.HEADER_FORMAT, header_data)
+                opcode_val, payload_size = struct.unpack(
+                    Protocol.HEADER_FORMAT, header_data
+                )
                 opcode = Opcode(opcode_val)
 
                 payload = b""
                 if payload_size > 0:
-                    # <<< MODIFICADO: Usa a função _recv_all para garantir o payload completo >>>
-                    payload = _recv_all(sock, payload_size)
-                    if payload is None:
-                        logger.error("Conexão fechada inesperadamente durante o recebimento do payload.")
+                    recv_result = _recv_all(sock, payload_size)
+                    if recv_result is None:
+                        logger.error(
+                            "Conexão fechada inesperadamente durante o recebimento do payload."
+                        )
                         break
+                    payload = recv_result
 
                 yield opcode, payload
 
             except (struct.error, ValueError) as e:
-                logger.error(f"Erro ao desempacotar mensagem: {e}. Descartando e continuando.")
+                logger.error(
+                    f"Erro ao desempacotar mensagem: {e}. Descartando e continuando."
+                )
                 break
             except ConnectionResetError:
                 logger.warning("Conexão reiniciada pelo peer.")
